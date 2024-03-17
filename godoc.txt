@@ -1,0 +1,116 @@
+package typedmap // import "github.com/thetechpanda/typedmap"
+
+typedmap package implements a simple thread-safe map that uses generics.
+
+The Keys and Values functions return slices of the keys and values in the map,
+respectively. However, the order of these elements is not guaranteed to be
+consistent. If the order of keys and values is important, consider using the
+Entries function, which iterates over the map in a consistent order.
+
+The read operations use RWMutex.RLock to allow multiple readers to access the
+map concurrently, while the write operations use RWMutex.Lock to ensure that
+only one writer can access the map at a time.
+
+There are a few things to note about the implementation when using the sync.Map
+interface:
+
+  - sync.Map uses K, V any, which means that the keys and values can be of any
+    type. However, the typedmap package uses K comparable, V any, which means
+    that the keys must be comparable.
+  - The CompareAndSwap and CompareAndDelete functions use reflect.DeepEqual to
+    compare the values, which may not be as efficient as using the == operator
+    for simple types. TypeMap detects if the value is comparable type and will
+    always return false if it is not.
+
+TYPES
+
+type Map[K comparable, V any] interface {
+	// Load returns the value stored in the map for a key, or nil if no
+	// value is present.
+	// The ok result indicates whether value was found in the map.
+	Load(key K) (v V, ok bool)
+	// Store sets the value for a key.
+	Store(key K, value V)
+	// LoadOrStore returns the existing value for the key if present.
+	// Otherwise, it stores and returns the given value.
+	// The loaded result is true if the value was loaded, false if stored.
+	LoadOrStore(key K, value V) (actual V, loaded bool)
+	// LoadAndDelete deletes the value for a key, returning the previous value if any.
+	// The loaded result reports whether the key was present.
+	LoadAndDelete(key K) (value V, loaded bool)
+	// Delete deletes the value for a key.
+	Delete(key K)
+	// Swap swaps the value for a key and returns the previous value if any.
+	// The loaded result reports whether the key was present.
+	Swap(key K, value V) (previous V, loaded bool)
+	// CompareAndSwap swaps the old and new values for key
+	// if V is not comparable type this function will return false.
+	// ! this function uses reflect.DeepEqual to compare the values.
+	//
+	// if the value stored in the map is equal to old.
+	CompareAndSwap(key K, old, new V) bool
+	// CompareAndDelete deletes the entry for key if its value is equal to old.
+	// if V is not comparable type this function will return false.
+	// ! this function uses reflect.DeepEqual to compare the values.
+	//
+	// If there is no current value for key in the map, CompareAndDelete
+	// returns false (even if the old value is the nil interface value).
+	CompareAndDelete(key K, old V) (deleted bool)
+	// Range calls f sequentially for each key and value present in the map.
+	// If f returns false, range stops the iteration.
+	//
+	// Range does not necessarily correspond to any consistent snapshot of the Map's
+	// contents: no key will be visited more than once, but if the value for any key
+	// is stored or deleted concurrently (including by f), Range may reflect any
+	// mapping for that key from any point during the Range call. Range does not
+	// block other methods on the receiver; even f itself may call any method on m.
+	//
+	// Range may be O(N) with the number of elements in the map even if f returns
+	// false after a constant number of calls.
+	Range(f func(K, V) bool)
+}
+    Map is a generic interface that provides a way to interact with the map.
+    its interface is identical to sync.Map and so are function definition and
+    behaviour.
+
+func NewSyncMapCompatible[K comparable, V any]() Map[K, V]
+    NewSyncMapCompatible returns a new TypedMap that is compatible with sync.Map
+    interface. You can always cast TypeMap to Map[K, V] and use it as you would
+    sync.Map with the added benefit of type safety.
+
+type TypedMap[K comparable, V any] interface {
+	Map[K, V]
+	// Update allows the caller to change the value associated with the key atomically guaranteeing that the value would not be changed by another goroutine during the operation.
+	// ! Avoid invoking any map functions within 'f' to prevent a deadlock.
+	Update(key K, f func(V, bool) V)
+	// UpdateRange is a thread-safe version of Range that locks the map for the duration of the iteration and allows for the modification of the values.
+	// If f returns false, UpdateRange stops the iteration, without updating the corresponding value in the map.
+	// ! Avoid invoking any map functions within 'f' to prevent a deadlock.
+	UpdateRange(f func(K, V) (V, bool))
+	// Exclusive provides a way to perform  operations on the map ensuring that no other operation is performed on the map during the execution of the function.
+	// ! Avoid invoking any map functions within 'f' to prevent a deadlock.
+	Exclusive(f func(m map[K]V))
+	// Clear removes all items from the map.
+	Clear()
+	// Has returns true if the map contains the key.
+	Has(key K) bool
+	// Keys returns a slice of all the keys present in the map, an empty slice is returned if the map is empty.
+	Keys() (keys []K)
+	// Values returns a slice of all the values present in the map, an empty slice is returned if the map is empty.
+	Values() (values []V)
+	// Entries returns two slices, one containing all the keys and the other containing all the values present in the map.
+	Entries() (keys []K, values []V)
+	// Len returns the number of unique keys in the map.
+	Len() (n int)
+}
+    TypedMap is a generic interface that provides a way to interact with the
+    map. Its interface extends Map[K, V]
+
+func New[K comparable, V any]() TypedMap[K, V]
+    New returns a new TypedMap.
+
+func NewWithMap[K comparable, V any](m map[K]V) TypedMap[K, V]
+    NewWithMap returns a new TypedMap, initialized with the given map. if m is
+    nil, an empty map is created. m key, values are copied, so that the caller
+    can safely modify the map after creating a TypedMap.
+

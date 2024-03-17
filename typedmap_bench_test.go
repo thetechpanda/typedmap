@@ -1,7 +1,7 @@
-// The benchmarks are designed to compare the performance of TypedMap with sync.Map, since sync.Map is not typed, the benchmarks are designed to compare the performance of the operations that are common between the two maps.
 package typedmap_test
 
 import (
+	"context"
 	"sync"
 	"testing"
 
@@ -13,7 +13,6 @@ func noop(x ...any) {
 	_ = x
 }
 
-// BenchmarkConcurrentSyncMapStore measures the performance of concurrent storing of values in sync.Map.
 func BenchmarkConcurrentSyncMapStore(b *testing.B) {
 	var m sync.Map
 	var wg sync.WaitGroup
@@ -28,7 +27,6 @@ func BenchmarkConcurrentSyncMapStore(b *testing.B) {
 	wg.Wait()
 }
 
-// BenchmarkConcurrentTypedMapSet measures the performance of concurrent setting of values in TypedMap.
 func BenchmarkConcurrentTypedMapSet(b *testing.B) {
 	m := typedmap.New[int, int]()
 	var wg sync.WaitGroup
@@ -37,13 +35,12 @@ func BenchmarkConcurrentTypedMapSet(b *testing.B) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			m.Set(i, i)
+			m.Store(i, i)
 		}(i)
 	}
 	wg.Wait()
 }
 
-// BenchmarkSyncMapDelete measures the performance of deleting values from sync.Map.
 func BenchmarkSyncMapDelete(b *testing.B) {
 	var m sync.Map
 	for i := 0; i < b.N; i++ {
@@ -55,11 +52,10 @@ func BenchmarkSyncMapDelete(b *testing.B) {
 	}
 }
 
-// BenchmarkTypedMapDelete measures the performance of deleting values from TypedMap.
 func BenchmarkTypedMapDelete(b *testing.B) {
 	m := typedmap.New[int, int]()
 	for i := 0; i < b.N; i++ {
-		m.Set(i, i)
+		m.Store(i, i)
 	}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -67,7 +63,6 @@ func BenchmarkTypedMapDelete(b *testing.B) {
 	}
 }
 
-// BenchmarkSyncMapRange measures the performance of iterating over sync.Map.
 func BenchmarkSyncMapRange(b *testing.B) {
 	var m sync.Map
 	for i := 0; i < b.N; i++ {
@@ -75,17 +70,15 @@ func BenchmarkSyncMapRange(b *testing.B) {
 	}
 	b.ResetTimer()
 	m.Range(func(k, v any) bool {
-		kk, vv := k.(int), v.(int)
-		noop(kk, vv)
+		noop(k.(int), v.(int))
 		return true
 	})
 }
 
-// BenchmarkTypedMapRange measures the performance of iterating over TypedMap.
 func BenchmarkTypedMapRange(b *testing.B) {
 	m := typedmap.New[int, int]()
 	for i := 0; i < b.N; i++ {
-		m.Set(i, i)
+		m.Store(i, i)
 	}
 	b.ResetTimer()
 	m.Range(func(k int, v int) bool {
@@ -94,7 +87,6 @@ func BenchmarkTypedMapRange(b *testing.B) {
 	})
 }
 
-// BenchmarkSyncMapRange measures the performance of iterating over sync.Map.
 func BenchmarkSyncMapLoad(b *testing.B) {
 	var m sync.Map
 	for i := 0; i < b.N; i++ {
@@ -107,49 +99,43 @@ func BenchmarkSyncMapLoad(b *testing.B) {
 	}
 }
 
-// BenchmarkTypedMapRange measures the performance of iterating over TypedMap.
 func BenchmarkTypedMapGet(b *testing.B) {
 	m := typedmap.New[int, int]()
 	for i := 0; i < b.N; i++ {
-		m.Set(i, i)
+		m.Store(i, i)
 	}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		v, _ := m.Get(i)
+		v, _ := m.Load(i)
 		noop(v)
 	}
 }
 
-// BenchmarkSyncMapSimulateEntries measures the performance of returning all keys and values from the map.
-// as there is no direct way to get all keys and values from sync.Map, we simulate it by iterating over all keys and getting their values.
 func BenchmarkSyncMapSimulateEntries(b *testing.B) {
 	var m sync.Map
 	for i := 0; i < b.N; i++ {
 		m.Store(i, i)
 	}
 	b.ResetTimer()
-	keys, values := make([]any, 0), make([]any, 0)
+	keys, values := make([]int, 0), make([]int, 0)
 	m.Range(func(k, v any) bool {
-		keys = append(keys, k)
-		values = append(values, v)
+		keys = append(keys, k.(int))
+		values = append(values, v.(int))
 		return true
 	})
 	noop(keys, values)
 }
 
-// BenchmarkTypedMapEntries measures the performance of Entries.
 func BenchmarkTypedMapEntries(b *testing.B) {
 	m := typedmap.New[int, int]()
 	for i := 0; i < b.N; i++ {
-		m.Set(i, i)
+		m.Store(i, i)
 	}
 	b.ResetTimer()
 	keys, values := m.Entries()
 	noop(keys, values)
 }
 
-// BenchmarkSyncMapSimulateKeys measures the performance of returning all keys from the map.
-// As there is no direct way to get all keys from sync.Map, we simulate it by iterating over all keys using range.
 func BenchmarkSyncMapSimulateKeys(b *testing.B) {
 	var m sync.Map
 	for i := 0; i < b.N; i++ {
@@ -164,19 +150,16 @@ func BenchmarkSyncMapSimulateKeys(b *testing.B) {
 	noop(keys)
 }
 
-// BenchmarkTypedMapKeys measures the performance of Keys.
 func BenchmarkTypedMapKeys(b *testing.B) {
 	m := typedmap.New[int, int]()
 	for i := 0; i < b.N; i++ {
-		m.Set(i, i)
+		m.Store(i, i)
 	}
 	b.ResetTimer()
 	keys := m.Keys()
 	noop(keys)
 }
 
-// BenchmarkSyncMapSimulateKeys measures the performance of returning all values from the map.
-// As there is no direct way to get all values from sync.Map, we simulate it by iterating over all keys and getting their values.
 func BenchmarkSyncMapSimulateValues(b *testing.B) {
 	var m sync.Map
 	for i := 0; i < b.N; i++ {
@@ -191,18 +174,16 @@ func BenchmarkSyncMapSimulateValues(b *testing.B) {
 	noop(values)
 }
 
-// BenchmarkTypedMapValues measures the performance of Values.
 func BenchmarkTypedMapValues(b *testing.B) {
 	m := typedmap.New[int, int]()
 	for i := 0; i < b.N; i++ {
-		m.Set(i, i)
+		m.Store(i, i)
 	}
 	b.ResetTimer()
 	values := m.Values()
 	noop(values)
 }
 
-// BenchmarkSyncMapSimulateUpdate measures the performance using a mutex to simulate updating values in sync.Map assuming that the mutex is shared with other operations.
 func BenchmarkSyncMapSimulateUpdate(b *testing.B) {
 	var m sync.Map
 	for i := 0; i < b.N; i++ {
@@ -219,11 +200,10 @@ func BenchmarkSyncMapSimulateUpdate(b *testing.B) {
 
 }
 
-// BenchmarkTypedMapUpdate measures the performance of Update.
 func BenchmarkTypedMapUpdate(b *testing.B) {
 	m := typedmap.New[int, int]()
 	for i := 0; i < b.N; i++ {
-		m.Set(i, i)
+		m.Store(i, i)
 	}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -234,7 +214,6 @@ func BenchmarkTypedMapUpdate(b *testing.B) {
 	}
 }
 
-// BenchmarkSyncMapSimulateUpdateRange measures the performance using a mutex to simulate updating values in sync.Map assuming that the mutex is shared with other operations.
 func BenchmarkSyncMapSimulateUpdateRange(b *testing.B) {
 	var m sync.Map
 	for i := 0; i < b.N; i++ {
@@ -252,15 +231,110 @@ func BenchmarkSyncMapSimulateUpdateRange(b *testing.B) {
 
 }
 
-// BenchmarkTypedMapAtomicRange measures the performance of iterating over TypedMap using AtomicRange.
 func BenchmarkTypedMapUpdateRange(b *testing.B) {
 	m := typedmap.New[int, int]()
 	for i := 0; i < b.N; i++ {
-		m.Set(i, i)
+		m.Store(i, i)
 	}
 	b.ResetTimer()
 	m.UpdateRange(func(k, i int) (int, bool) {
 		noop(k, i)
 		return i + 1, true
+	})
+}
+
+func benchmarkConcurrentInt(b *testing.B, f func(n, i, j int)) {
+	numGoroutines := 100
+	numOperations := 1000
+	var wg sync.WaitGroup
+	ctx, cancel := context.WithCancel(context.Background())
+	b.ResetTimer()
+	for n := 0; n < b.N; n++ {
+		for i := 0; i < numGoroutines; i++ {
+			wg.Add(1)
+			go func() {
+				<-ctx.Done()
+				defer wg.Done()
+				for j := 0; j < numOperations; j++ {
+					f(n, j, i)
+				}
+			}()
+		}
+	}
+	cancel()
+	wg.Wait()
+}
+
+func BenchmarkSyncMapConcurrentOperations(b *testing.B) {
+	var m = &sync.Map{}
+	benchmarkConcurrentInt(b, func(n, i, j int) {
+		m.Store(i, j)
+		m.Load(i)
+		m.Delete(j)
+	})
+}
+
+func BenchmarkTypedMapConcurrentOperations(b *testing.B) {
+	m := typedmap.New[int, int]()
+	benchmarkConcurrentInt(b, func(n, i, j int) {
+		m.Store(i, j)
+		m.Load(i)
+		m.Delete(i)
+	})
+}
+func BenchmarkSyncMapConcurrentStore(b *testing.B) {
+	m := &sync.Map{}
+	benchmarkConcurrentInt(b, func(n, i, j int) {
+		m.Store(i, j)
+	})
+}
+
+func BenchmarkTypedMapConcurrentStore(b *testing.B) {
+	m := typedmap.New[int, int]()
+	benchmarkConcurrentInt(b, func(n, i, j int) {
+		m.Store(i, j)
+	})
+}
+func BenchmarkSyncMapConcurrentSwap(b *testing.B) {
+	m := &sync.Map{}
+	benchmarkConcurrentInt(b, func(n, i, j int) {
+		m.Swap(i, j)
+	})
+}
+
+func BenchmarkTypedMapConcurrentSwap(b *testing.B) {
+	m := typedmap.New[int, int]()
+	benchmarkConcurrentInt(b, func(n, i, j int) {
+		m.Swap(i, j)
+	})
+}
+
+func BenchmarkSyncMapConcurrentLoadOrStore(b *testing.B) {
+	m := &sync.Map{}
+	benchmarkConcurrentInt(b, func(n, i, j int) {
+		v, ok := m.LoadOrStore(i, j)
+		_ = v.(int)
+		if !ok {
+			m.Delete(i)
+		}
+	})
+}
+
+func BenchmarkTypedMapConcurrentLoadOrStore(b *testing.B) {
+	m := typedmap.New[int, int]()
+	benchmarkConcurrentInt(b, func(n, i, j int) {
+		_, ok := m.LoadOrStore(i, j)
+		if !ok {
+			m.Delete(i)
+		}
+	})
+}
+
+func BenchmarkTypedMapConcurrentUpdate(b *testing.B) {
+	m := typedmap.New[int, int]()
+	benchmarkConcurrentInt(b, func(n, i, j int) {
+		m.Update(i, func(v int, ok bool) int {
+			return v + 1
+		})
 	})
 }

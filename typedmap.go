@@ -1,168 +1,183 @@
-// typedmap package implements a simple thread-safe map that enhances sync.Map by adding type safety and maintaining a count of the items in the map.
-//
-// While TypedMap provides some similar functionality, it is not a drop-in replacement for sync.Map and offers a simpler, more specialized interface. Its main objective is to sacrifice some compute time for type safety and a consistent interface.
+// typedmap package implements a simple thread-safe map that uses generics.
 //
 // The Keys and Values functions return slices of the keys and values in the map, respectively. However, the order of these elements is not guaranteed to be consistent.
 // If the order of keys and values is important, consider using the Entries function, which iterates over the map in a consistent order.
 //
-// The Entries, Keys and Values functions do not lock the map during their operation. They use the Len function to allocate memory for the result slices and then use the Range function to populate these slices.
-// Consequently, the map could be modified by other goroutines between the time Len is called and the Range function starts iterating, potentially leading to discrepancies.
+// The read operations use RWMutex.RLock to allow multiple readers to access the map concurrently, while the write operations use RWMutex.Lock to ensure that only one writer can access the map at a time.
 //
-// Key, Values and Entries have the same guarantees as sync.Map.Range. When the guarantee that the map will not be modified during the iteration is required, use the AtomicRange function.
+// There are a few things to note about the implementation when using the sync.Map interface:
+//
+//   - sync.Map uses K, V any, which means that the keys and values can be of any type. However, the typedmap package uses K comparable, V any, which means that the keys must be comparable.
+//   - The CompareAndSwap and CompareAndDelete functions use reflect.DeepEqual to compare the values, which may not be as efficient as using the == operator for simple types. TypeMap detects if the value is comparable type and will always return false if it is not.
 package typedmap
 
 import (
+	"reflect"
 	"sync"
-	"sync/atomic"
 )
 
-// TypedMap is a thread-safe map that enhances sync.Map by adding type safety and maintaining a count of the items in the map.
-type TypedMap[K any, V any] struct {
-	mu    sync.Mutex
-	count atomic.Int64
-	data  sync.Map
+// TypedMap is a generic interface that provides a way to interact with the map.
+// Its interface extends Map[K, V]
+type TypedMap[K comparable, V any] interface {
+	Map[K, V]
+	// Update allows the caller to change the value associated with the key atomically guaranteeing that the value would not be changed by another goroutine during the operation.
+	// ! Avoid invoking any map functions within 'f' to prevent a deadlock.
+	Update(key K, f func(V, bool) V)
+	// UpdateRange is a thread-safe version of Range that locks the map for the duration of the iteration and allows for the modification of the values.
+	// If f returns false, UpdateRange stops the iteration, without updating the corresponding value in the map.
+	// ! Avoid invoking any map functions within 'f' to prevent a deadlock.
+	UpdateRange(f func(K, V) (V, bool))
+	// Exclusive provides a way to perform  operations on the map ensuring that no other operation is performed on the map during the execution of the function.
+	// ! Avoid invoking any map functions within 'f' to prevent a deadlock.
+	Exclusive(f func(m map[K]V))
+	// Clear removes all items from the map.
+	Clear()
+	// Has returns true if the map contains the key.
+	Has(key K) bool
+	// Keys returns a slice of all the keys present in the map, an empty slice is returned if the map is empty.
+	Keys() (keys []K)
+	// Values returns a slice of all the values present in the map, an empty slice is returned if the map is empty.
+	Values() (values []V)
+	// Entries returns two slices, one containing all the keys and the other containing all the values present in the map.
+	Entries() (keys []K, values []V)
+	// Len returns the number of unique keys in the map.
+	Len() (n int)
+}
+
+// TypedMap implements a simple thread-safe map that uses generics.
+type typedMap[K comparable, V any] struct {
+	mu              sync.RWMutex
+	valueComparable bool
+	data            map[K]V
 }
 
 // New returns a new TypedMap.
 func New[K comparable, V any]() TypedMap[K, V] {
-	return TypedMap[K, V]{}
+	return NewWithMap[K, V](nil)
 }
 
-// Get returns the value associated with the key and true if the key is present in the map.
-func (m *TypedMap[K, V]) Get(key K) (v V, ok bool) {
-	x, ok := m.data.Load(key)
-	if !ok {
-		return v, false
+// NewWithMap returns a new TypedMap, initialized with the given map. if m is nil, an empty map is created.
+// m key, values are copied, so that the caller can safely modify the map after creating a TypedMap.
+func NewWithMap[K comparable, V any](m map[K]V) TypedMap[K, V] {
+	var v map[K]V = make(map[K]V, len(m))
+	for key, value := range m {
+		v[key] = value
 	}
-	return x.(V), true
+	var z V
+	return &typedMap[K, V]{data: v, valueComparable: reflect.TypeOf(z).Comparable()}
 }
 
-// Set stores the key-value pair in the map. It overwrites the previous value if the key already exists in the map.
-// When it is important to know the previous value, use the Update function.
-// This is a locking operation.
-func (m *TypedMap[K, V]) Set(key K, value V) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.unsafeSet(key, value)
-}
-
-// unsafeSet is a non-locking version of Set. It is used by Set and Update to avoid deadlocks.
-func (m *TypedMap[K, V]) unsafeSet(key K, value V) {
-	if !m.Has(key) {
-		m.count.Add(1)
-	}
-	m.data.Store(key, value)
-}
-
-// Update allows the caller to change the value associated with the key atomically guaranteeing that the value would not be changed by another goroutine during the operation.
-// This is a locking operation. Calling Set, Delete, Clear or Update in f will cause a deadlock.
-func (m *TypedMap[K, V]) Update(key K, f func(V, bool) V) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	v, ok := m.Get(key)
-	m.unsafeSet(key, f(v, ok))
+// NewSyncMapCompatible returns a new TypedMap that is compatible with sync.Map interface.
+// You can always cast TypeMap to Map[K, V] and use it as you would sync.Map with the added benefit of type safety.
+func NewSyncMapCompatible[K comparable, V any]() Map[K, V] {
+	return NewWithMap[K, V](nil)
 }
 
 // Clear removes all items from the map.
 // This is a locking operation.
-func (m *TypedMap[K, V]) Clear() {
+func (m *typedMap[K, V]) Clear() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.data = sync.Map{}
-	m.count.Store(0)
-}
-
-// Delete removes the key from the map.
-// This is a locking operation.
-func (m *TypedMap[K, V]) Delete(key K) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.Has(key) {
-		m.data.Delete(key)
-		m.count.Add(-1)
-	}
+	m.data = make(map[K]V)
 }
 
 // Has returns true if the map contains the key.
-func (m *TypedMap[K, V]) Has(key K) bool {
-	_, ok := m.data.Load(key)
+func (m *typedMap[K, V]) Has(key K) bool {
+	_, ok := m.Load(key)
 	return ok
 }
 
+// Update allows the caller to change the value associated with the key atomically guaranteeing that the value would not be changed by another goroutine during the operation.
+// ! Avoid invoking any map functions within 'f' to prevent a deadlock.
+func (m *typedMap[K, V]) Update(key K, f func(V, bool) V) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	v, ok := m.data[key]
+	m.data[key] = f(v, ok)
+}
+
+// UpdateRange is a thread-safe version of Range that locks the map for the duration of the iteration and allows for the modification of the values.
+// If f returns false, UpdateRange stops the iteration, without updating the corresponding value in the map.
+// ! Avoid invoking any map functions within 'f' to prevent a deadlock.
+func (m *typedMap[K, V]) UpdateRange(f func(K, V) (V, bool)) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for key, value := range m.data {
+		newValue, ok := f(key, value)
+		if !ok {
+			return
+		}
+		m.data[key] = newValue
+	}
+}
+
+// Exclusive provides a way to perform  operations on the map ensuring that no other operation is performed on the map during the execution of the function.
+// ! Avoid invoking any map functions within 'f' to prevent a deadlock.
+func (m *typedMap[K, V]) Exclusive(f func(m map[K]V)) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	f(m.data)
+}
+
+// Len returns the number of items in the map.
+func (m *typedMap[K, V]) Len() (n int) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return len(m.data)
+}
+
 // Keys returns a slice of all the keys present in the map, an empty slice is returned if the map is empty.
-func (m *TypedMap[K, V]) Keys() (keys []K) {
-	// map could have been modified between the time we got the count and the time we started the range
-	// max ensures two things 1. we don't allocate more memory than we need 2. we don't iterate more than we need
-	max := m.Len()
+func (m *typedMap[K, V]) Keys() (keys []K) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	max := len(m.data)
 	if max == 0 {
 		return make([]K, 0)
 	}
 	keys = make([]K, 0, max)
-	m.data.Range(func(key, value any) (ok bool) {
-		keys = append(keys, key.(K))
-		return len(keys) <= max
-	})
+	for key := range m.data {
+		keys = append(keys, key)
+		if len(keys) >= max {
+			break
+		}
+	}
 	return keys
 }
 
 // Values returns a slice of all the values present in the map, an empty slice is returned if the map is empty.
-func (m *TypedMap[K, V]) Values() (values []V) {
-	// map could have been modified between the time we got the count and the time we started the range
-	// max ensures two things 1. we don't allocate more memory than we need 2. we don't iterate more than we need
-	max := m.Len()
+func (m *typedMap[K, V]) Values() (values []V) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	max := len(m.data)
 	if max == 0 {
 		return make([]V, 0)
 	}
 	values = make([]V, 0, max)
-	m.data.Range(func(key, value any) bool {
-		values = append(values, value.(V))
-		return len(values) <= max
-
-	})
+	for _, value := range m.data {
+		values = append(values, value)
+		if len(values) >= max {
+			break
+		}
+	}
 	return values
 }
 
 // Entries returns two slices, one containing all the keys and the other containing all the values present in the map.
-func (m *TypedMap[K, V]) Entries() (keys []K, values []V) {
-	max := m.Len()
+func (m *typedMap[K, V]) Entries() (keys []K, values []V) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	max := len(m.data)
 	if max == 0 {
 		return make([]K, 0), make([]V, 0)
 	}
 	keys = make([]K, 0, max)
 	values = make([]V, 0, max)
-	m.data.Range(func(key, value any) (ok bool) {
-		keys = append(keys, key.(K))
-		values = append(values, value.(V))
-		return len(keys) <= max
-	})
-	return keys, values
-}
-
-// Range calls f sequentially for each key and value present in the map.
-// If f returns false, Range stops the iteration.
-func (m *TypedMap[K, V]) Range(f func(K, V) bool) {
-	m.data.Range(func(key, value any) bool {
-		return f(key.(K), value.(V))
-	})
-}
-
-// UpdateRange is a thread-safe version of Range that locks the map for the duration of the iteration and allows for the modification of the values.
-// If f returns false, UpdateRange stops the iteration, without updating the corresponding value in the map.
-// Calling Set, Delete, Clear or Update within f will cause a deadlock.
-func (m *TypedMap[K, V]) UpdateRange(f func(K, V) (V, bool)) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.data.Range(func(key, value any) bool {
-		v, ok := f(key.(K), value.(V))
-		if !ok {
-			return false
+	for key, value := range m.data {
+		keys = append(keys, key)
+		values = append(values, value)
+		if len(keys) >= max {
+			break
 		}
-		m.unsafeSet(key.(K), v)
-		return true
-	})
-}
-
-// Len returns the number of items in the map.
-func (m *TypedMap[K, V]) Len() (n int) {
-	return int(m.count.Load())
+	}
+	return keys, values
 }
