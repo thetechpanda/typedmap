@@ -1,17 +1,17 @@
-package typedmap_test
+package mutex_test
 
 import (
 	"context"
 	"fmt"
 	"sync"
-	"sync/atomic"
 	"testing"
 
 	"github.com/thetechpanda/typedmap"
+	"github.com/thetechpanda/typedmap/internal/mutex"
 )
 
 func TestNew(t *testing.T) {
-	m := typedmap.New[string, int]()
+	m := mutex.New[string, int](nil)
 	if m.Len() != 0 {
 		t.Errorf("Len(): Expected a new map, got map with length %d", m.Len())
 	}
@@ -21,7 +21,7 @@ func TestNewWithMap(t *testing.T) {
 		"key1": 42,
 		"key2": 43,
 	}
-	m := typedmap.NewWithMap(data)
+	m := mutex.New(data)
 	v, ok := m.Load("key1")
 	if !ok || v != 42 {
 		t.Errorf("Load(): Expected value 42 for key %q, got value %d", "key1", v)
@@ -33,7 +33,7 @@ func TestNewWithMap(t *testing.T) {
 }
 
 func TestLoad(t *testing.T) {
-	m := typedmap.New[string, int]()
+	m := mutex.New[string, int](nil)
 	key := "key"
 	value := 42
 	m.Store(key, value)
@@ -44,7 +44,7 @@ func TestLoad(t *testing.T) {
 }
 
 func TestStore(t *testing.T) {
-	m := typedmap.New[string, int]()
+	m := mutex.New[string, int](nil)
 	key := "key"
 	value := 42
 	m.Store(key, value)
@@ -55,7 +55,7 @@ func TestStore(t *testing.T) {
 }
 
 func TestLoadOrStore(t *testing.T) {
-	m := typedmap.New[string, int]()
+	m := mutex.New[string, int](nil)
 	key := "key"
 	value := 42
 	actual, loaded := m.LoadOrStore(key, value)
@@ -76,7 +76,7 @@ func TestLoadOrStore(t *testing.T) {
 }
 
 func TestLoadAndDelete(t *testing.T) {
-	m := typedmap.New[string, int]()
+	m := mutex.New[string, int](nil)
 	key := "key"
 	m.Store(key, 42)
 	v, deleted := m.LoadAndDelete(key)
@@ -91,7 +91,7 @@ func TestLoadAndDelete(t *testing.T) {
 }
 
 func TestDelete(t *testing.T) {
-	m := typedmap.New[string, int]()
+	m := mutex.New[string, int](nil)
 	key := "key"
 	value := 42
 	m.Store(key, value)
@@ -102,7 +102,7 @@ func TestDelete(t *testing.T) {
 }
 
 func TestSwap(t *testing.T) {
-	m := typedmap.New[string, int]()
+	m := mutex.New[string, int](nil)
 	key := "key"
 	value := 42
 	previous, loaded := m.Swap(key, value)
@@ -123,7 +123,7 @@ func TestSwap(t *testing.T) {
 }
 
 func TestCompareAndSwap(t *testing.T) {
-	m := typedmap.New[string, int]()
+	m := mutex.New[string, int](nil)
 	key := "key"
 	current, swap := 42, 43
 	m.Store(key, current)
@@ -138,7 +138,7 @@ func TestCompareAndSwap(t *testing.T) {
 }
 
 func TestCompareAndDelete(t *testing.T) {
-	m := typedmap.New[string, int]()
+	m := mutex.New[string, int](nil)
 	key := "key"
 	value := 42
 	m.Store(key, value)
@@ -229,7 +229,7 @@ func TestRange(t *testing.T) {
 }
 
 func TestLen(t *testing.T) {
-	m := typedmap.New[string, int]()
+	m := mutex.New[string, int](nil)
 	if m.Len() != 0 {
 		t.Errorf("Len(): Expected length 0, got %d", m.Len())
 	}
@@ -242,7 +242,7 @@ func TestLen(t *testing.T) {
 }
 
 func TestUpdate(t *testing.T) {
-	m := typedmap.New[string, int]()
+	m := mutex.New[string, int](nil)
 	var wg sync.WaitGroup
 	n := 100
 	loops := 10
@@ -312,7 +312,7 @@ func TestUpdateRange(t *testing.T) {
 	}
 }
 
-func TestTypedMapConcurrentAccessSet(t *testing.T) {
+func TestConcurrentAccessSet(t *testing.T) {
 	m := typedmap.New[int, int]()
 
 	// Number of goroutines to spawn
@@ -344,7 +344,7 @@ func TestTypedMapConcurrentAccessSet(t *testing.T) {
 	}
 }
 
-func TestTypedMapConcurrentAccessUpdate(t *testing.T) {
+func TestConcurrentAccessUpdate(t *testing.T) {
 	m := typedmap.New[int, int]()
 
 	// Number of goroutines to spawn
@@ -387,7 +387,7 @@ func TestTypedMapConcurrentAccessUpdate(t *testing.T) {
 
 }
 
-func TestTypedMapConcurrentAccessUpdateRange(t *testing.T) {
+func TestConcurrentAccessUpdateRange(t *testing.T) {
 	m := typedmap.New[int, int]()
 	// Number of goroutines to spawn
 	numGoroutines := 100
@@ -424,7 +424,7 @@ func TestTypedMapConcurrentAccessUpdateRange(t *testing.T) {
 	})
 }
 
-func TestTypedMapConcurrentAccessRange(t *testing.T) {
+func TestConcurrentAccessRange(t *testing.T) {
 	m := typedmap.New[int, int]()
 
 	// Number of goroutines to spawn
@@ -435,7 +435,13 @@ func TestTypedMapConcurrentAccessRange(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(numGoroutines)
 	ctx, cancel := context.WithCancel(context.Background())
-	var count atomic.Int64
+	var count int
+	var mu sync.Mutex
+	increment := func() {
+		mu.Lock()
+		defer mu.Unlock()
+		count++
+	}
 	// starts numGoroutines go routines, the i values is used for content
 	for i := 0; i < numGoroutines; i++ {
 		go func(i int) {
@@ -446,7 +452,7 @@ func TestTypedMapConcurrentAccessRange(t *testing.T) {
 			// so we will have 1000*100 Get, Set and Delete operations
 			for j := 0; j < numGoroutines; j++ {
 				m.Range(func(k, v int) bool {
-					count.Add(1)
+					increment()
 					return true
 				})
 			}
@@ -454,14 +460,13 @@ func TestTypedMapConcurrentAccessRange(t *testing.T) {
 	}
 	cancel()
 	wg.Wait()
-	c := int(count.Load())
 	expect := numGoroutines * numGoroutines * numGoroutines
-	if c != expect {
-		t.Errorf("Expected count %d, got %d", expect, c)
+	if count != expect {
+		t.Errorf("Expected count %d, got %d", expect, count)
 	}
 }
 
-func TestTypedMapConcurrentAccessExclusive(t *testing.T) {
+func TestConcurrentAccessExclusive(t *testing.T) {
 	m := typedmap.New[int, int]()
 	// Number of goroutines to spawn
 	numGoroutines := 100
@@ -537,4 +542,126 @@ func TestClear(t *testing.T) {
 	if m.Len() != 0 {
 		t.Errorf("Len(): Expected length 0, got %d", m.Len())
 	}
+}
+
+func testValues[K comparable, V comparable](t *testing.T, key K, value V) {
+	m := typedmap.New[K, V]()
+	m.Store(key, value)
+	v, ok := m.Load(key)
+	if !ok {
+		t.Errorf("Load(): Expected key %v to be present", key)
+	}
+	if v != value {
+		t.Errorf("Load(): Expected value %v for key %v, got value %v", value, key, v)
+	}
+
+	m.Delete(key)
+
+	if _, loaded := m.LoadOrStore(key, value); loaded {
+		t.Errorf("LoadOrStore(): Expected key %v not to be stored", key)
+	}
+	if !m.CompareAndSwap(key, value, value) {
+		t.Errorf("CompareAndSwap(): Expected key %v to be swapped", key)	
+	}
+	if !m.CompareAndDelete(key, value) {
+		t.Errorf("CompareAndDelete(): Expected key %v to be deleted", key)
+	}
+	m.CompareAndDelete(key, value)
+	m.Swap(key, value)
+	m.LoadAndDelete(key)
+	
+}
+
+func TestValues(t *testing.T) {
+
+	// Test values of different types
+	var b bool = true
+	var s string = "string"
+	var i int = 1
+	var f float64 = 1.1
+	var c complex128 = 1 + 1i
+	var r rune = 'r'
+	var by byte = byte('b')
+	var st = struct {
+		A int
+	}{A: 1}
+
+	// Pointer to values
+	var bP *bool = &b
+	var sP *string = &s
+	var iP *int = &i
+	var fP *float64 = &f
+	var cP *complex128 = &c
+	var rP *rune = &r
+	var byP *byte = &by
+	var stP *struct {
+		A int
+	} = &st
+
+	// Nil pointers
+	var bN *bool = nil
+	var sN *string = nil
+	var iN *int = nil
+	var fN *float64 = nil
+	var cN *complex128 = nil
+	var rN *rune = nil
+	var byN *byte = nil
+	var stN *struct {
+		A int
+	} = nil
+
+	testValues(t, b, b)
+	testValues(t, s, s)
+	testValues(t, i, i)
+	testValues(t, f, f)
+	testValues(t, c, c)
+	testValues(t, r, r)
+	testValues(t, by, by)
+	testValues(t, st, st)
+
+	testValues(t, b, bP)
+	testValues(t, s, sP)
+	testValues(t, i, iP)
+	testValues(t, f, fP)
+	testValues(t, c, cP)
+	testValues(t, r, rP)
+	testValues(t, by, byP)
+	testValues(t, st, stP)
+
+	testValues(t, bP, b)
+	testValues(t, sP, s)
+	testValues(t, iP, i)
+	testValues(t, fP, f)
+	testValues(t, cP, c)
+	testValues(t, rP, r)
+	testValues(t, byP, by)
+	testValues(t, stP, st)
+
+	testValues(t, bN, b)
+	testValues(t, sN, s)
+	testValues(t, iN, i)
+	testValues(t, fN, f)
+	testValues(t, cN, c)
+	testValues(t, rN, r)
+	testValues(t, byN, by)
+	testValues(t, stN, st)
+
+	testValues(t, b, bN)
+	testValues(t, s, sN)
+	testValues(t, i, iN)
+	testValues(t, f, fN)
+	testValues(t, c, cN)
+	testValues(t, r, rN)
+	testValues(t, by, byN)
+	testValues(t, st, stN)
+
+	testValues(t, bP, bN)
+	testValues(t, sP, sN)
+	testValues(t, iP, iN)
+	testValues(t, fP, fN)
+	testValues(t, cP, cN)
+	testValues(t, rP, rN)
+	testValues(t, byP, byN)
+	testValues(t, stP, stN)
+
 }

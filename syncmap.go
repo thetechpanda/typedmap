@@ -1,8 +1,10 @@
 package typedmap
 
-// Map is a generic interface that provides a way to interact with the map.
-// its interface is identical to sync.Map and so are function definition and behaviour.
-type Map[K comparable, V any] interface {
+import "github.com/thetechpanda/typedmap/internal/syncmap"
+
+// SyncMap is a generic interface that provides a way to interact with the map.
+// its just a generic wrapper around sync.Map
+type SyncMap[K, V any] interface {
 	// Load returns the value stored in the map for a key, or nil if no
 	// value is present.
 	// The ok result indicates whether value was found in the map.
@@ -23,20 +25,15 @@ type Map[K comparable, V any] interface {
 	Swap(key K, value V) (previous V, loaded bool)
 	// CompareAndSwap swaps the old and new values for key
 	// if the value stored in the map is equal to old.
-	//
-	// The old value must be of a comparable type or this function will return false.
+	// The old value must be of a comparable type.
 	//
 	// Returns true if the swap was performed.
-	//
-	// ! this function uses reflect.DeepEqual to compare the values.
 	CompareAndSwap(key K, old, new V) bool
 	// CompareAndDelete deletes the entry for key if its value is equal to old.
-	// The old value must be of a comparable type or this function will return false.
+	// The old value must be of a comparable type.
 	//
 	// If there is no current value for key in the map, CompareAndDelete
 	// returns false (even if the old value is the nil interface value).
-	//
-	// ! this function uses reflect.DeepEqual to compare the values.
 	CompareAndDelete(key K, old V) (deleted bool)
 	// Range calls f sequentially for each key and value present in the map.
 	// If f returns false, range stops the iteration.
@@ -52,8 +49,9 @@ type Map[K comparable, V any] interface {
 	Range(f func(K, V) bool)
 }
 
-// NewSyncMapCompatible returns a new TypedMap that is exactly as sync.Map interface,
-// use it as you would sync.Map with the added benefit of type safety.
-func NewSyncMapCompatible[K comparable, V any]() Map[K, V] {
-	return New[K, V]()
+// NewSyncMap a new SyncMap that wraps sync.Map with generics.
+// It allows the use of sync.Map natively and has the same drawbacks as sync.Map.
+// Using CompareAndSwap or CompareAndDelete with non comparable V types will panic, as it does in sync.Map.
+func NewSyncMap[K any, V any]() SyncMap[K, V] {
+	return syncmap.New[K, V]()
 }
