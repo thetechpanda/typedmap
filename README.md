@@ -2,7 +2,7 @@
 
 [![Go Report Card](https://goreportcard.com/badge/github.com/thetechpanda/typedmap)](https://goreportcard.com/report/github.com/thetechpanda/typedmap)
 [![Go Reference](https://pkg.go.dev/badge/github.com/thetechpanda/typedmap.svg)](https://pkg.go.dev/github.com/thetechpanda/typedmap)
-[![Release](https://img.shields.io/github/release/thetechpanda/typedmap.svg?style=flat-square)](https://github.com/thetechpanda/typedmap/tags/latest)
+[![Release](https://img.shields.io/github/release/thetechpanda/typedmap.svg?style=flat-square)](https://github.com/thetechpanda/typedmap/releases)
 
 `TypedMap` implements a simple thread-safe map that behaves similarly to `sync.Map` adding type safety and making it simple to know how many unique keys are in the map, `TypeMap` implements the same interface as `sync.Map` and provides `Map[K, V]` interface to ease code refactoring from `sync.Map` to `TypedMap`. 
 
@@ -50,6 +50,8 @@ However, this flexibility comes at the cost of type safety and can lead to more 
 
 ## Usage
 
+For more examples look at [example_test.go](example_test.go)
+
 ```go
 package main
 
@@ -68,6 +70,16 @@ func main() {
 	v, ok := m.Load(key)
 	// v is int
 }
+```
+
+## Code coverage
+
+```
+$ go test -cover ./...
+ok  	github.com/thetechpanda/typedmap	0.431s	coverage: 100.0% of statements
+ok  	github.com/thetechpanda/typedmap/benchmarks	1.137s	coverage: 0.0% of statements [no tests to run]
+ok  	github.com/thetechpanda/typedmap/internal/mutex	1.332s	coverage: 100.0% of statements
+ok  	github.com/thetechpanda/typedmap/internal/syncmap	0.689s	coverage: 100.0% of statements
 ```
 
 ## Benchmarks

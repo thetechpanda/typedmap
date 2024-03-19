@@ -22,7 +22,7 @@ func (m *SyncMap[K, V]) Store(key K, value V) {
 // The ok result indicates whether value was found in the map.
 func (m *SyncMap[K, V]) Load(key K) (v V, ok bool) {
 	value, ok := m.sm.Load(key)
-	if value == nil {
+	if value == nil || !ok {
 		return m.zeroValue(), ok
 	}
 	return value.(V), ok
@@ -39,6 +39,8 @@ func (m *SyncMap[K, V]) LoadOrStore(key K, value V) (actual V, loaded bool) {
 	}
 	return v.(V), loaded
 }
+
+// zeroValue returns the zero value for the value type V.
 func (m *SyncMap[K, V]) zeroValue() V {
 	var zero V
 	return zero

@@ -26,6 +26,10 @@ func TestNewWithMap(t *testing.T) {
 	if !ok || v != 42 {
 		t.Errorf("Load(): Expected value 42 for key %q, got value %d", "key1", v)
 	}
+	if !m.Has("key2") {
+		t.Errorf("Has(): Expected key %q to be present", "key2")
+	}
+
 	v, ok = m.Load("key2")
 	if !ok || v != 43 {
 		t.Errorf("Load(): Expected value 43 for key %q, got value %d", "key2", v)
@@ -161,6 +165,15 @@ func TestCompareAndDelete(t *testing.T) {
 
 func TestKeysValues(t *testing.T) {
 	m := typedmap.New[int, int]()
+
+	if len(m.Keys()) != 0 {
+		t.Errorf("Keys(): Expected empty keys, got %v", m.Keys())
+	}
+
+	if len(m.Values()) != 0 {
+		t.Errorf("Values(): Expected empty values, got %v", m.Values())
+	}
+
 	for i := 0; i < 100; i++ {
 		m.Store(i, i)
 	}
@@ -190,6 +203,15 @@ func TestKeysValues(t *testing.T) {
 
 func TestEntries(t *testing.T) {
 	m := typedmap.New[int, int]()
+
+	zK, zV := m.Entries()
+	if len(zK) != 0 {
+		t.Errorf("Entries(): Expected empty keys, got %v", zK)
+	}
+	if len(zV) != 0 {
+		t.Errorf("Entries(): Expected empty values, got %v", zV)
+	}
+
 	for i := 0; i < 100; i++ {
 		m.Store(i, i)
 	}
@@ -225,6 +247,14 @@ func TestRange(t *testing.T) {
 	})
 	if sum != 100 {
 		t.Errorf("Range(): Expected sum 4950, got %d", sum)
+	}
+	sum = 0
+	m.Range(func(key, value int) bool {
+		sum++
+		return false
+	})
+	if sum != 1 {
+		t.Errorf("Range(): Expected sum 1, got %d", sum)
 	}
 }
 
@@ -292,8 +322,8 @@ func TestUpdateRange(t *testing.T) {
 		// each time it will add 1 to the value
 		// so the final sum should be 100 + 100
 		m.UpdateRange(func(k, i int) (int, bool) {
-			sum += i
-			return i + 1, true
+			sum++
+			return 2, true
 		})
 	}()
 	sig <- nil
@@ -309,6 +339,33 @@ func TestUpdateRange(t *testing.T) {
 	})
 	if sum != 200 {
 		t.Errorf("Range(): Expected sum 200, got %d", sum)
+	}
+	sum = 0
+	// here all values are 2, so the sum should be 200
+	m.Range(func(key, value int) bool {
+		sum++
+		return false
+	})
+	if sum != 1 {
+		t.Errorf("Range(): Expected sum 1, got %d", sum)
+	}
+
+	sum = 0
+	var mapKey int
+	m.UpdateRange(func(k, i int) (int, bool) {
+		sum++
+		mapKey = k
+		return 0, false
+	})
+
+	if sum != 1 {
+		t.Errorf("UpdateRange(): Expected sum 1, got %d", sum)
+	}
+
+	if v, ok := m.Load(mapKey); !ok {
+		t.Errorf("Load(): Expected key %d to be present", mapKey)
+	} else if v != 2 {
+		t.Errorf("Load(): Expected value 2, got %d", v)
 	}
 }
 
@@ -515,7 +572,6 @@ func TestNotComparableType(t *testing.T) {
 	if m.CompareAndSwap(1, []int{1, 2, 3}, []int{1, 2, 3, 4}) {
 		t.Errorf("Expected not comparable type")
 	}
-
 }
 func TestComparableType(t *testing.T) {
 	m := typedmap.New[int, int]()
@@ -526,6 +582,10 @@ func TestComparableType(t *testing.T) {
 	m.Store(1, 1)
 	if !m.CompareAndSwap(1, 1, 2) {
 		t.Errorf("Expected to return true")
+	}
+
+	if m.CompareAndSwap(1, 3, 4) {
+		t.Errorf("Expected not to return true")
 	}
 
 }
@@ -561,7 +621,7 @@ func testValues[K comparable, V comparable](t *testing.T, key K, value V) {
 		t.Errorf("LoadOrStore(): Expected key %v not to be stored", key)
 	}
 	if !m.CompareAndSwap(key, value, value) {
-		t.Errorf("CompareAndSwap(): Expected key %v to be swapped", key)	
+		t.Errorf("CompareAndSwap(): Expected key %v to be swapped", key)
 	}
 	if !m.CompareAndDelete(key, value) {
 		t.Errorf("CompareAndDelete(): Expected key %v to be deleted", key)
@@ -569,7 +629,7 @@ func testValues[K comparable, V comparable](t *testing.T, key K, value V) {
 	m.CompareAndDelete(key, value)
 	m.Swap(key, value)
 	m.LoadAndDelete(key)
-	
+
 }
 
 func TestValues(t *testing.T) {

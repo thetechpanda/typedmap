@@ -43,6 +43,14 @@ func TestSyncMapLoadOrStore(t *testing.T) {
 	if actual != value {
 		t.Errorf("Expected value %d for key %q, got value %d", value, key, actual)
 	}
+
+	mp := syncmap.New[string, *int]()
+	mp.Store(key, nil)
+	var valueP *int = new(int)
+	if actual, _ := mp.LoadOrStore(key, valueP); actual != nil {
+		t.Errorf("LoadOrStore(): Expected to store nil value")
+	}
+
 }
 
 func TestSyncMapLoadAndDelete(t *testing.T) {
@@ -203,6 +211,30 @@ func TestSyncMapComparableType(t *testing.T) {
 
 }
 
+func TestSyncMapRange(t *testing.T) {
+	m := syncmap.New[int, int]()
+	numKeys := 100
+	for i := 0; i < numKeys; i++ {
+		m.Store(i, i)
+	}
+	count := 0
+	m.Range(func(key int, value int) bool {
+		count++
+		return true
+	})
+	if count != numKeys {
+		t.Errorf("Expected to iterate over all keys")
+	}
+	count = 0
+	m.Range(func(key int, value int) bool {
+		count++
+		return false
+	})
+	if count != 1 {
+		t.Errorf("Expected to iterate over all keys")
+	}
+}
+
 func testValues[K any, V any](t *testing.T, key K, value V) {
 	m := syncmap.New[K, V]()
 	m.Store(key, value)
@@ -224,6 +256,17 @@ func testValues[K any, V any](t *testing.T, key K, value V) {
 }
 
 func TestValues(t *testing.T) {
+	// test pointer to any type with nil value
+	var anyV interface{}
+	ma := syncmap.New[*interface{}, interface{}]()
+	ma.Store(&anyV, anyV)
+	ma.LoadOrStore(&anyV, anyV)
+	// test pointer to struct with nil value
+	var anyS struct{}
+	ms := syncmap.New[*struct{}, struct{}]()
+	ms.Store(&anyS, anyS)
+	ms.LoadOrStore(&anyS, anyS)
+
 	// Test values of different types
 	var b bool = true
 	var s string = "string"
